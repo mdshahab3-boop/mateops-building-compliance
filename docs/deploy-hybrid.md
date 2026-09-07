@@ -10,7 +10,7 @@ services so the eventual move to full Cloudflare never has to migrate data:
 | File storage     | **Cloudflare R2**        | ❌ stays        |
 | Ingress / TLS    | **Cloudflare Tunnel**    | ❌ stays        |
 
-Target hostname: `https://compliance.mateops.com.au`.
+Target hostname: `https://bc.mateops.com.au`.
 
 ---
 
@@ -39,7 +39,7 @@ Buckets already exist: `mateops-compliance-documents`,
 
 1. Cloudflare **Zero Trust → Networks → Tunnels → Create a tunnel** (Cloudflared).
    Copy the **tunnel token** → `TUNNEL_TOKEN`.
-2. Add a **Public Hostname**: `compliance.mateops.com.au` →
+2. Add a **Public Hostname**: `bc.mateops.com.au` →
    service `http://web:3000`. (Cloudflare creates the DNS record + TLS.)
 
 ## 4. Configure `.env` on the VPS
@@ -71,7 +71,7 @@ docker compose -f docker-compose.hybrid.yml up -d --build
 docker compose -f docker-compose.hybrid.yml logs -f cloudflared   # confirm "Registered tunnel connection"
 ```
 
-Visit `https://compliance.mateops.com.au`. Admin login is at `/admin/login`.
+Visit `https://bc.mateops.com.au`. Admin login is at `/admin/login`.
 
 ## Updating
 
