@@ -1,0 +1,127 @@
+# Strata Contractor Induction & Compliance Platform — Hostinger VPS stack.
+#
+# Infra only (Stage 1):   docker compose up -d postgres redis minio createbuckets
+# Full app (Stage 2+):    docker compose --profile app up -d --build
+#
+# All secrets come from .env (see .env.example). Never commit .env.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    # Not published to the host — the app reaches it internally as redis:6379.
+    # (Avoids clashing with any other Redis already on the host, e.g. n8n's.)
+    expose:
+      - "6379"
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # One-shot: create the required buckets, then exit.
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${S3_ACCESS_KEY} $${S3_SECRET_KEY}; do sleep 2; done;
+      mc mb -p local/$${S3_BUCKET_DOCUMENTS} || true;
+      mc mb -p local/$${S3_BUCKET_CERTIFICATES} || true;
+      echo 'buckets ready';
+      "
+    env_file: .env
+
+  # ---- Application services (Stage 2+). Start with: --profile app ----------
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+    # The app listens on 3000 inside the container. Publish it on WEB_PORT on the
+    # host (default 3100 to avoid clashing with other services like n8n on 3000).
+    # When you run Caddy/HTTPS you can drop this and keep the port internal.
+    ports:
+      - "${WEB_PORT:-3100}:3000"
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  caddy:
+    profiles: ["app"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  caddydata:
+  caddyconfig:

@@ -1,0 +1,20 @@
+{
+  "name": "@scip/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Background job processor (BullMQ). Implemented in Stage 6.",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scip/config": "workspace:*",
+    "@scip/db": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

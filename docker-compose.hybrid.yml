@@ -1,0 +1,50 @@
+# Hybrid stack — app + jobs on the VPS; Postgres->Neon, storage->R2,
+# ingress->Cloudflare Tunnel. No host ports are published; cloudflared reaches
+# the app internally as web:3000.
+#
+#   Bring up:   docker compose -f docker-compose.hybrid.yml up -d --build
+#   Migrate:    see docs/deploy-hybrid.md (run once against Neon before first boot)
+#
+# All secrets come from .env (see .env.hybrid.example). Never commit .env.
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    expose:
+      - "6379"
+    volumes:
+      - redisdata:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+    expose:
+      - "3000" # internal only; Cloudflare Tunnel routes to http://web:3000
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - web
+
+volumes:
+  redisdata:
